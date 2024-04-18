@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require("cookie-parser");
 const bcrypt = require('bcryptjs')
 const User = require('./models/User');
+const ws = require('ws');
 
 const jwtSecret = process.env.JWT_SECRET;
 const bcryptSalt = bcrypt.genSaltSync(10);
@@ -85,4 +86,28 @@ app.post('/register', async (req,res) => {
 
 
 
-app.listen(4040);
+const server = app.listen(4040);
+
+const wss = new ws.WebSocketServer({server});
+
+wss.on("connection", (conn, req) => {
+  console.log("ws connected!!");
+  const cookies = req.headers.cookie;
+  if(cookies) {
+    const tokenCookieString = cookies.split(';').find( (str) => str.startsWith("token=")) || cookies;
+    if(tokenCookieString) {
+      const token = tokenCookieString.split('=')[1];
+      if(token) {
+        jwt.verify(token, jwtSecret, {}, (err, userData) => {
+          if(err) throw err;
+          const {userId, username} = userData;
+          console.log(userId, username);
+          conn.userId = userId;
+          conn.username = username;
+        });
+      }
+    }
+  }
+
+  
+});
