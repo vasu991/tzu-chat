@@ -101,7 +101,6 @@ wss.on("connection", (conn, req) => {
         jwt.verify(token, jwtSecret, {}, (err, userData) => {
           if(err) throw err;
           const {userId, username} = userData;
-          console.log(userId, username);
           conn.userId = userId;
           conn.username = username;
         });
@@ -109,5 +108,9 @@ wss.on("connection", (conn, req) => {
     }
   }
 
-  
+  [...wss.clients].forEach(client => {
+    client.send(JSON.stringify({
+      online: [...wss.clients].map(c => ({userId: c.userId, username: c.username})),
+   }));
+  });
 });
