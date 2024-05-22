@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import Avatar from "./Avatar";
+import Logo from "./Logo";
+import {UserContext} from "./UserContext.jsx";
 
 export default function Chat() {
     const [ws, setWs] = useState(null);
     const [onlinePeople, setOnlinePeople] = useState({});
+    const [seletedUserId, setSelectedUserId] = useState(null);
+    const {username, id} = useContext(UserContext);
     useEffect(() => {
         const ws = new WebSocket("ws://localhost:4040");
         setWs(ws);
@@ -15,7 +19,6 @@ export default function Chat() {
         peopleArray.forEach(({userId, username}) => {
             people[userId] = username;
         });
-        console.log(people);
         setOnlinePeople(people);
     }
 
@@ -26,24 +29,39 @@ export default function Chat() {
         }
     }
 
+    const onlinePeopleExclOurUser = {...onlinePeople};
+    delete onlinePeopleExclOurUser[id];
+
+
+
     return(
         <div className="flex h-screen">
-            <div className="bg-white w-1/3 pl-4 pt-4">
-                <div className="text-blue-600 font-bold flex gap-2 mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-  <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0 1 12 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 0 1-3.476.383.39.39 0 0 0-.297.17l-2.755 4.133a.75.75 0 0 1-1.248 0l-2.755-4.133a.39.39 0 0 0-.297-.17 48.9 48.9 0 0 1-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97ZM6.75 8.25a.75.75 0 0 1 .75-.75h9a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1-.75-.75Zm.75 2.25a.75.75 0 0 0 0 1.5H12a.75.75 0 0 0 0-1.5H7.5Z" clipRule="evenodd" />
-</svg>
-                    Tzu Chat</div>
+            <div className="bg-white w-1/3">
+                <Logo />
                 {Object.keys(onlinePeople).map(userId => (
                     // eslint-disable-next-line react/jsx-key
-                    <div className="border-bottom border-gray-100 py-2 flex items-center gap-2 cursor-pointer">
+                    <div 
+                    key={userId}
+                    onClick={() => setSelectedUserId(userId)} 
+                    className={"border-bottom border-gray-100 flex items-center gap-2 cursor-pointer " + (userId === seletedUserId ? "bg-blue-100" : "")}>
+                        {userId === seletedUserId ? (
+                            <div className="w-1 bg-blue-500 h-12 rounded-r-md "></div>
+                        ) : <></>}
+                        <div className="flex gap-2 py-2 pl-4 items-center">
                         <Avatar username={onlinePeople[userId]} userId={userId}/>
                         <span className="text-gray-800">{onlinePeople[userId]}</span>
+                        </div>
                         </div>
                 ))}
             </div>
             <div className="flex flex-col bg-blue-50 w-2/3 p-2">
-                <div className="flex-grow">messages with selected person</div>
+                <div className="flex-grow">
+                    {!seletedUserId && (
+                        <div className="flex h-full flex-grow items-center justify-center">
+                            <div className="text-gray-400">&larr; Select a person from the sidebar</div>
+                        </div>
+                    )}
+                </div>
                 <div className="flex gap-2">
                     <input type="text"
                     placeholder="Type your message here"
