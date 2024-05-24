@@ -7,7 +7,8 @@ dotenv.config();
 const jwt = require('jsonwebtoken');
 const cookieParser = require("cookie-parser");
 const bcrypt = require('bcryptjs')
-const User = require('./models/User');
+const User = require('./models/User.js');
+const Message = require("./models/Message.js");
 const ws = require('ws');
 
 const jwtSecret = process.env.JWT_SECRET;
@@ -107,6 +108,27 @@ wss.on("connection", (conn, req) => {
       }
     }
   }
+
+  conn.on("message", async (message) => {
+    const messageData = JSON.parse(message.toString());
+    const {recipient, text} = messageData;
+    if(recipient && text) {
+      const messageDoc = await Message.create({
+        sender: conn.userId,
+        recipient,
+        text,
+      });
+      [...wss.clients]
+      .filter(c => c.userId === recipient)
+      .forEach(c => c.send(JSON.stringify({
+         text,
+         sender: conn.userId,
+         recipient,
+         id: messageDoc._id,
+        })));
+    }
+  });
+  
 
   [...wss.clients].forEach(client => {
     client.send(JSON.stringify({

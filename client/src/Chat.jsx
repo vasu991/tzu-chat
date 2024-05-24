@@ -2,16 +2,22 @@ import { useContext, useEffect, useState } from "react";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
 import {UserContext} from "./UserContext.jsx";
+import uniqBy from "lodash";
 
 export default function Chat() {
     const [ws, setWs] = useState(null);
     const [onlinePeople, setOnlinePeople] = useState({});
     const [seletedUserId, setSelectedUserId] = useState(null);
-    const {username, id} = useContext(UserContext);
+    const {id} = useContext(UserContext);
+    const [newMessageText, setNewMessageText] = useState('');
+    const [messages, setMessages] = useState([]);
+
+
     useEffect(() => {
         const ws = new WebSocket("ws://localhost:4040");
         setWs(ws);
         ws.addEventListener('message', handleMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     function showOnlinePeople(peopleArray) {
@@ -24,21 +30,40 @@ export default function Chat() {
 
     function handleMessage(ev) {
         const messageData = JSON.parse(ev.data);
+        console.log({ev, messageData});
         if("online" in messageData) {
             showOnlinePeople(messageData.online);
         }
+        else {
+            setMessages(prev => ([...prev, {...messageData}]));
+        }
+    }
+
+    function sendMessage(ev) {
+        ev.preventDefault();
+        ws.send(JSON.stringify({
+            recipient: seletedUserId,
+            text: newMessageText,
+        }));
+        setNewMessageText("");
+        setMessages(prev => ([...prev, {
+            text: newMessageText,
+            sender: id,
+            recipient: seletedUserId,
+        }]));
+
     }
 
     const onlinePeopleExclOurUser = {...onlinePeople};
     delete onlinePeopleExclOurUser[id];
 
-
+    const messagesWithoutDupes = uniqBy(messages, "id");
 
     return(
         <div className="flex h-screen">
             <div className="bg-white w-1/3">
                 <Logo />
-                {Object.keys(onlinePeople).map(userId => (
+                {Object.keys(onlinePeopleExclOurUser).map(userId => (
                     // eslint-disable-next-line react/jsx-key
                     <div 
                     key={userId}
@@ -61,17 +86,34 @@ export default function Chat() {
                             <div className="text-gray-400">&larr; Select a person from the sidebar</div>
                         </div>
                     )}
+                    {!!seletedUserId && (
+                        <div className="overflow-y-scroll">
+                            {messagesWithoutDupes.map(message => (
+                                // eslint-disable-next-line react/jsx-key
+                                <div className={(message.sender === id ? "text-right" : "text-left")}>
+                                    <div className={"text-left inline-block p-2 my-2 rounded-md text-sm " + (message.sender === id ? "bg-blue-500 text-white" : "bg-white text-gray-500")}>
+                                    
+                                    {message.text}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
-                <div className="flex gap-2">
-                    <input type="text"
-                    placeholder="Type your message here"
-                    className="bg-white border p-2 flex-grow rounded-sm"/>
-                    <button className="bg-blue-500 p-2 text-white rounded-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-                        </svg>
-                    </button>
-                </div>
+                {!!seletedUserId && (
+                    <form className="flex gap-2" onSubmit={sendMessage}>
+                        <input type="text"
+                        value={newMessageText}
+                        onChange={ev => setNewMessageText(ev.target.value)}
+                        placeholder="Type your message here"
+                        className="bg-white border p-2 flex-grow rounded-sm"/>
+                        <button type="submit" className="bg-blue-500 p-2 text-white rounded-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                            </svg>
+                        </button>
+                  </form>
+                )}
             </div>
 
         </div>
