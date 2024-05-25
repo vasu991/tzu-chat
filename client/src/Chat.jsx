@@ -1,8 +1,8 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
 import {UserContext} from "./UserContext.jsx";
-import uniqBy from "lodash";
+import {uniqBy} from "lodash";
 
 export default function Chat() {
     const [ws, setWs] = useState(null);
@@ -11,6 +11,7 @@ export default function Chat() {
     const {id} = useContext(UserContext);
     const [newMessageText, setNewMessageText] = useState('');
     const [messages, setMessages] = useState([]);
+    const divUnderMessages = useRef();
 
 
     useEffect(() => {
@@ -30,11 +31,11 @@ export default function Chat() {
 
     function handleMessage(ev) {
         const messageData = JSON.parse(ev.data);
-        console.log({ev, messageData});
+        // console.log({ev, messageData});
         if("online" in messageData) {
             showOnlinePeople(messageData.online);
         }
-        else {
+        else if("text" in messageData){
             setMessages(prev => ([...prev, {...messageData}]));
         }
     }
@@ -50,15 +51,22 @@ export default function Chat() {
             text: newMessageText,
             sender: id,
             recipient: seletedUserId,
+            id: Date.now(),
         }]));
-
+        
     }
+    useEffect(() => {
+        
+        const div = divUnderMessages.current;
+        if(div) { 
+            div.scrollIntoView({behavior: "smooth", block: "end"});
+        }
+    }, [messages]);
+
 
     const onlinePeopleExclOurUser = {...onlinePeople};
     delete onlinePeopleExclOurUser[id];
-
     const messagesWithoutDupes = uniqBy(messages, "id");
-
     return(
         <div className="flex h-screen">
             <div className="bg-white w-1/3">
@@ -87,21 +95,26 @@ export default function Chat() {
                         </div>
                     )}
                     {!!seletedUserId && (
-                        <div className="overflow-y-scroll">
+                            <div className="relative h-full">
+                            <div
+                            className="overflow-y-scroll absolute top-0 left-0 right-0 bottom-2">
                             {messagesWithoutDupes.map(message => (
                                 // eslint-disable-next-line react/jsx-key
                                 <div className={(message.sender === id ? "text-right" : "text-left")}>
                                     <div className={"text-left inline-block p-2 my-2 rounded-md text-sm " + (message.sender === id ? "bg-blue-500 text-white" : "bg-white text-gray-500")}>
-                                    
                                     {message.text}
                                     </div>
                                 </div>
                             ))}
+                            <div
+                            ref={divUnderMessages}>
+                            </div>
+                        </div>
                         </div>
                     )}
                 </div>
                 {!!seletedUserId && (
-                    <form className="flex gap-2" onSubmit={sendMessage}>
+                    <form id="chat-input" className="flex gap-2" onSubmit={sendMessage}>
                         <input type="text"
                         value={newMessageText}
                         onChange={ev => setNewMessageText(ev.target.value)}
