@@ -16,11 +16,21 @@ export default function Chat() {
 
 
     useEffect(() => {
-        const ws = new WebSocket("ws://localhost:4040");
+        connectToWs();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+
+      function connectToWs() {
+        const ws = new WebSocket('ws://localhost:4040');
         setWs(ws);
         ws.addEventListener('message', handleMessage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        ws.addEventListener('close', () => {
+          setTimeout(() => {
+            console.log('Disconnected. Trying to reconnect.');
+            connectToWs();
+          }, 1000);
+        });
+      }
 
     function showOnlinePeople(peopleArray) {
         const people = {};
@@ -52,7 +62,7 @@ export default function Chat() {
             text: newMessageText,
             sender: id,
             recipient: seletedUserId,
-            id: Date.now(),
+            _id: Date.now(),
         }]));
         
     }
@@ -67,7 +77,9 @@ export default function Chat() {
     useEffect(() => {
         if(seletedUserId) {
             axios.get("/messages/"+seletedUserId)
-            .then();
+            .then(res => {
+                setMessages(res.data);
+            });
             
         }
     }, [seletedUserId]);
@@ -75,13 +87,12 @@ export default function Chat() {
 
     const onlinePeopleExclOurUser = {...onlinePeople};
     delete onlinePeopleExclOurUser[id];
-    const messagesWithoutDupes = uniqBy(messages, "id");
+    const messagesWithoutDupes = uniqBy(messages, "_id");
     return(
         <div className="flex h-screen">
             <div className="bg-white w-1/3">
                 <Logo />
                 {Object.keys(onlinePeopleExclOurUser).map(userId => (
-                    // eslint-disable-next-line react/jsx-key
                     <div 
                     key={userId}
                     onClick={() => setSelectedUserId(userId)} 
@@ -108,8 +119,9 @@ export default function Chat() {
                             <div
                             className="overflow-y-scroll absolute top-0 left-0 right-0 bottom-2">
                             {messagesWithoutDupes.map(message => (
-                                // eslint-disable-next-line react/jsx-key
-                                <div className={(message.sender === id ? "text-right" : "text-left")}>
+                                <div
+                                key={message._id}
+                                className={(message.sender === id ? "text-right" : "text-left")}>
                                     <div className={"text-left inline-block p-2 my-2 rounded-md text-sm " + (message.sender === id ? "bg-blue-500 text-white" : "bg-white text-gray-500")}>
                                     {message.text}
                                     </div>
