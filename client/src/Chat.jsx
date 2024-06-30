@@ -56,6 +56,7 @@ export default function Chat() {
     }
 
     function logout() {
+      localStorage.clear();
       axios.post("/logout").then(() => {
         setWs(null);
         setId(null);
@@ -117,6 +118,7 @@ export default function Chat() {
           });
           setOfflinePeople(offlinePeople);
         });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [onlinePeople]);
     
       useEffect(() => {

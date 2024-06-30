@@ -30,7 +30,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(cors({
     credentials: true,
-    origin: process.env.CLIENT_URL,
+    origin: [process.env.CLIENT_URL],
 }));
 
 async function getUserDataFromRequest(req) {
@@ -153,7 +153,7 @@ wss.on("connection", (conn, req) => {
       notifyAboutOnlinePeople();
       console.log("death");
     }, 1000);
-  }, 50000);
+  }, 5000);
 
   conn.on("pong", () => {
     clearTimeout(conn.deathTimer);
