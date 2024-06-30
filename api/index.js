@@ -10,7 +10,7 @@ const bcrypt = require('bcryptjs')
 const User = require('./models/User.js');
 const Message = require("./models/Message.js");
 const ws = require('ws');
-
+const fs = require("fs");
 const jwtSecret = process.env.JWT_SECRET;
 const bcryptSalt = bcrypt.genSaltSync(10);
 
@@ -23,6 +23,8 @@ if(mongoose.Error.length > 0) {
 else {
     console.log('Connected to Mongoose!!');
 }
+
+app.use("/uploads", express.static(__dirname + "/uploads"));
 
 app.use(express.json());
 app.use(cookieParser());
@@ -98,8 +100,8 @@ app.post("/login", async (req, res) => {
 
 });
 
-app.post("/logout", () => {
-  res.cookie('token', "", {sameSite:'none', secure:true}).json("ok");
+app.post('/logout', (req,res) => {
+  res.cookie('token', '', {sameSite:'none', secure:true}).json('ok');
 });
 
 
@@ -178,12 +180,24 @@ wss.on("connection", (conn, req) => {
 
   conn.on("message", async (message) => {
     const messageData = JSON.parse(message.toString());
-    const {recipient, text} = messageData;
-    if(recipient && text) {
+    const {recipient, text, file} = messageData;
+    let filename = null;
+    if(file) {
+      const parts = file.name.split('.');
+      const ext = parts[parts.length - 1];
+      filename = Date.now() + '.' + ext;
+      const path = __dirname + '/uploads/' + filename;
+      const bufferData = new Buffer.from(file.data.split(',')[1], 'base64');
+      fs.writeFile(path, bufferData, () => {
+        console.log("file saved: "+path);
+      });
+    }
+    if(recipient && (text || file)) {
       const messageDoc = await Message.create({
         sender: conn.userId,
         recipient,
         text,
+        file: file ? filename : null,
       });
       [...wss.clients]
       .filter(c => c.userId === recipient)
@@ -191,6 +205,7 @@ wss.on("connection", (conn, req) => {
          text,
          sender: conn.userId,
          recipient,
+         file: file ? filename : null,
          _id: messageDoc._id,
         })));
     }

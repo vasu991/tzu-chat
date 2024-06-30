@@ -48,7 +48,10 @@ export default function Chat() {
             showOnlinePeople(messageData.online);
         }
         else if("text" in messageData){
+          if(messageData.sender === selectedUserId) {
             setMessages(prev => ([...prev, {...messageData}]));
+          }
+           
         }
     }
 
@@ -60,11 +63,12 @@ export default function Chat() {
       });
     }
 
-    function sendMessage(ev) {
-        ev.preventDefault();
+    function sendMessage(ev, file = null) {
+        if(ev) ev.preventDefault();
         ws.send(JSON.stringify({
             recipient: selectedUserId,
             text: newMessageText,
+            file,
         }));
         setNewMessageText("");
         setMessages(prev => ([...prev, {
@@ -73,8 +77,27 @@ export default function Chat() {
             recipient: selectedUserId,
             _id: Date.now(),
         }]));
-        
+
+        if(file) {
+          axios.get('/messages/'+selectedUserId).then(res => {
+            setMessages(res.data);
+          });
+        }
     }
+
+    function sendFile(ev) {
+      const reader = new FileReader();
+      reader.readAsDataURL(ev.target.files[0]);
+      reader.onload = () => {
+        sendMessage(null, {
+          name: ev.target.files[0].name,
+          data: reader.result,
+        });
+      };
+    }
+
+
+
     useEffect(() => {
         
         const div = divUnderMessages.current;
@@ -162,6 +185,20 @@ export default function Chat() {
                                 className={(message.sender === id ? "text-right" : "text-left")}>
                                     <div className={"text-left inline-block p-2 my-2 rounded-md text-sm " + (message.sender === id ? "bg-blue-500 text-white" : "bg-white text-gray-500")}>
                                     {message.text}
+                                    {message.file && (
+                                      <div className="">
+                                        <a
+                                        target="_blank"
+                                        className="flex items-center gap-1 border-b"
+                                        href={axios.defaults.baseURL + '/uploads/' + message.file}>
+                                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                      </svg>
+                                        {message.file}
+                                        </a>
+    
+                                      </div>
+                                    )}
                                     </div>
                                 </div>
                             ))}
@@ -174,6 +211,17 @@ export default function Chat() {
                 </div>
                 {!!selectedUserId && (
                     <form id="chat-input" className="flex gap-2" onSubmit={sendMessage}>
+                      <label
+                      className="bg-gray-200 p-2 border rounded-sm cursor-pointer  text-gray-600 border-blue-200"
+                      type="button">
+                        <input type="file" className="hidden"
+                        onChange={sendFile}
+                        />
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                      </svg>
+
+                      </label>
                         <input type="text"
                         value={newMessageText}
                         onChange={ev => setNewMessageText(ev.target.value)}

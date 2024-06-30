@@ -5,7 +5,7 @@ import { UserContext } from "./UserContext.jsx";
 export function RegisterAndLoginForm() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [isLoginOrRegister, setIsLoginOrRegister] = useState('register');
+    const [isLoginOrRegister, setIsLoginOrRegister] = useState('login');
     const {setUsername:setLoggedInUsername, setId} = useContext(UserContext);
     async function handleSubmit(ev) {
         ev.preventDefault();
