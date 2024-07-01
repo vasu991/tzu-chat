@@ -3,8 +3,8 @@ import { UserContextProvider } from "./UserContext.jsx";
 import axios from "axios";
 import Routes from "./Routes.jsx";
 
-function App() {
-  axios.defaults.baseURL = "http://tzu-chat-api.vercel.app";
+function App() { 
+  axios.defaults.baseURL = "https://localhost:4040";
   axios.defaults.withCredentials = true;
   return (
       <UserContextProvider>
