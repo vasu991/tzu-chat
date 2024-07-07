@@ -22,7 +22,18 @@ export default function Chat() {
       }, []);
 
       function connectToWs() {
-        const ws = new WebSocket('ws://tzu-chat-backend.vercel.app');
+        const ws = new WebSocket(import.meta.env.VITE_REACT_WSS_URL_PROD);
+        ws.onopen = () => {
+          console.log('WebSocket connection opened');
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+        };
+        
+        ws.onclose = (event) => {
+          console.log('WebSocket connection closed:', event);
+        };
         setWs(ws);
         ws.addEventListener('message', handleMessage);
         ws.addEventListener('close', () => {
@@ -57,7 +68,7 @@ export default function Chat() {
 
     function logout() {
       localStorage.clear();
-      axios.post("/logout").then(() => {
+      axios.post("/api/logout").then(() => {
         setWs(null);
         setId(null);
         setUsername(null);
@@ -80,7 +91,7 @@ export default function Chat() {
         }]));
 
         if(file) {
-          axios.get('/messages/'+selectedUserId).then(res => {
+          axios.get('/api/messages/'+selectedUserId).then(res => {
             setMessages(res.data);
           });
         }
@@ -108,7 +119,7 @@ export default function Chat() {
     }, [messages]);
 
     useEffect(() => {
-        axios.get('/people').then(res => {
+        axios.get('/api/people').then(res => {
           const offlinePeopleArr = res.data
             .filter(p => p._id !== id)
             .filter(p => !Object.keys(onlinePeople).includes(p._id));
@@ -123,7 +134,7 @@ export default function Chat() {
     
       useEffect(() => {
         if (selectedUserId) {
-          axios.get('/messages/'+selectedUserId).then(res => {
+          axios.get('/api/messages/'+selectedUserId).then(res => {
             setMessages(res.data);
           });
         }
