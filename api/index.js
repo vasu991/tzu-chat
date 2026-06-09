@@ -12,6 +12,53 @@ const Message = require("./models/Message.js");
 const ws = require('ws');
 const fs = require("fs");
 
+// ---------------------------------------------------------------------------
+// Rate limiter – sliding window, in-memory, zero extra dependencies
+// ---------------------------------------------------------------------------
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MAX        = 5;              // max attempts per window
+
+// Map<ip, { count: number, windowStart: number }>
+const loginAttempts = new Map();
+
+// Purge entries older than one window to keep memory bounded
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of loginAttempts) {
+    if (now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
+      loginAttempts.delete(ip);
+    }
+  }
+}, RATE_LIMIT_WINDOW_MS);
+
+function loginRateLimiter(req, res, next) {
+  const ip  = req.ip || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  let record = loginAttempts.get(ip);
+
+  // Start a fresh window if none exists or the previous window has expired
+  if (!record || now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
+    record = { count: 0, windowStart: now };
+    loginAttempts.set(ip, record);
+  }
+
+  record.count += 1;
+
+  if (record.count > RATE_LIMIT_MAX) {
+    const retryAfterSec = Math.ceil(
+      (RATE_LIMIT_WINDOW_MS - (now - record.windowStart)) / 1000
+    );
+    res.set('Retry-After', String(retryAfterSec));
+    return res.status(429).json({
+      error: 'Too many login attempts. Please try again later.',
+      retryAfter: retryAfterSec,
+    });
+  }
+
+  next();
+}
+
 const jwtSecret = process.env.JWT_SECRET;
 const bcryptSalt = bcrypt.genSaltSync(10);
 
@@ -96,7 +143,7 @@ app.get('/api/profile', (req, res) => {
     }
 });
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", loginRateLimiter, async (req, res) => {
   try {
     const {username, password} = req.body;
     const foundUser = await User.findOne({username});
