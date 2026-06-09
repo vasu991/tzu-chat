@@ -282,10 +282,26 @@ app.post('/api/logout', (req,res) => {
 app.post('/api/register', registerRateLimiter, async (req,res) => {
     const {username, password, email} = req.body;
 
-    // Block disposable / throwaway email domains
-    if (email && isDisposableEmail(email)) {
+    // Email is required for account creation
+    if (!email || typeof email !== 'string') {
       return res.status(400).json({
-        error: 'Disposable email addresses are not allowed. Please use a permanent email.',
+        error: 'A valid email address is required to sign up.',
+      });
+    }
+
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        error: 'Please provide a valid email address.',
+      });
+    }
+
+    // Block sign-ups from disposable / throwaway email domains
+    const emailDomain = email.split('@')[1]?.toLowerCase();
+    if (isDisposableEmail(email)) {
+      return res.status(400).json({
+        error: `Sign-up blocked: "${emailDomain}" is a disposable email domain. Please use a permanent email address.`,
       });
     }
 
@@ -294,7 +310,7 @@ app.post('/api/register', registerRateLimiter, async (req,res) => {
       const createdUser = await User.create({
         username:username,
         password:hashedPassword,
-        email: email || undefined,
+        email: email.toLowerCase().trim(),
       });
       jwt.sign({userId:createdUser._id, username}, jwtSecret, {}, (err, token) => {
         if (err) throw err;
