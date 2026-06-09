@@ -250,13 +250,85 @@ async function getUserDataFromRequest(req) {
   });
 }
 
-app.get('/api/test', (req, res) => {
-    res.json("test ok");
-});
+// ---------------------------------------------------------------------------
+// Input validation helpers
+// ---------------------------------------------------------------------------
+const OBJECT_ID_REGEX = /^[a-fA-F0-9]{24}$/;
 
-app.get("/api/messages/:userId", async (req, res) => {
+function isValidObjectId(id) {
+  return typeof id === 'string' && OBJECT_ID_REGEX.test(id);
+}
+
+function validateRequiredString(value, fieldName, { minLen = 1, maxLen = 500 } = {}) {
+  if (!value || typeof value !== 'string') {
+    return `${fieldName} is required and must be a string.`;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length < minLen) {
+    return `${fieldName} must be at least ${minLen} character(s).`;
+  }
+  if (trimmed.length > maxLen) {
+    return `${fieldName} must be at most ${maxLen} characters.`;
+  }
+  return null; // valid
+}
+
+// ---------------------------------------------------------------------------
+// Messages rate limiter – prevents message history scraping
+// Limit: 30 requests per IP per minute
+// ---------------------------------------------------------------------------
+const MSG_RATE_WINDOW_MS = 60 * 1000; // 1 minute
+const MSG_RATE_MAX       = 30;
+
+const msgAttempts = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of msgAttempts) {
+    if (now - record.windowStart > MSG_RATE_WINDOW_MS) {
+      msgAttempts.delete(ip);
+    }
+  }
+}, MSG_RATE_WINDOW_MS);
+
+function messagesRateLimiter(req, res, next) {
+  const ip  = req.ip || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  let record = msgAttempts.get(ip);
+
+  if (!record || now - record.windowStart > MSG_RATE_WINDOW_MS) {
+    record = { count: 0, windowStart: now };
+    msgAttempts.set(ip, record);
+  }
+
+  record.count += 1;
+
+  if (record.count > MSG_RATE_MAX) {
+    const retryAfterSec = Math.ceil(
+      (MSG_RATE_WINDOW_MS - (now - record.windowStart)) / 1000
+    );
+    res.set('Retry-After', String(retryAfterSec));
+    return res.status(429).json({
+      error: 'Too many requests. Please slow down.',
+      retryAfter: retryAfterSec,
+    });
+  }
+
+  next();
+}
+
+app.get("/api/messages/:userId", messagesRateLimiter, async (req, res) => {
   try {
     const {userId} = req.params;
+
+    // Validate userId is a proper MongoDB ObjectId
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({
+        error: 'Invalid userId format. Expected a 24-character hex string.',
+      });
+    }
+
     const userData = await getUserDataFromRequest(req);
     const ourUserId = userData.userId;
     const messages = await Message.find({
