@@ -121,6 +121,51 @@ function emailRateLimiter(req, res, next) {
   next();
 }
 
+// ---------------------------------------------------------------------------
+// Registration rate limiter – prevents mass account creation
+// Limit: 5 sign-ups per IP per 30 minutes
+// ---------------------------------------------------------------------------
+const REGISTER_RATE_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const REGISTER_RATE_MAX       = 5;
+
+const registerAttempts = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of registerAttempts) {
+    if (now - record.windowStart > REGISTER_RATE_WINDOW_MS) {
+      registerAttempts.delete(ip);
+    }
+  }
+}, REGISTER_RATE_WINDOW_MS);
+
+function registerRateLimiter(req, res, next) {
+  const ip  = req.ip || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  let record = registerAttempts.get(ip);
+
+  if (!record || now - record.windowStart > REGISTER_RATE_WINDOW_MS) {
+    record = { count: 0, windowStart: now };
+    registerAttempts.set(ip, record);
+  }
+
+  record.count += 1;
+
+  if (record.count > REGISTER_RATE_MAX) {
+    const retryAfterSec = Math.ceil(
+      (REGISTER_RATE_WINDOW_MS - (now - record.windowStart)) / 1000
+    );
+    res.set('Retry-After', String(retryAfterSec));
+    return res.status(429).json({
+      error: 'Too many sign-up attempts from this IP. Please try again later.',
+      retryAfter: retryAfterSec,
+    });
+  }
+
+  next();
+}
+
 const jwtSecret = process.env.JWT_SECRET;
 const bcryptSalt = bcrypt.genSaltSync(10);
 
@@ -234,7 +279,7 @@ app.post('/api/logout', (req,res) => {
   res.cookie('token', '', {sameSite:'none', secure:true}).json('ok');
 });
 
-app.post('/api/register', async (req,res) => {
+app.post('/api/register', registerRateLimiter, async (req,res) => {
     const {username, password, email} = req.body;
 
     // Block disposable / throwaway email domains
