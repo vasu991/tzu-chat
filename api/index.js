@@ -371,6 +371,30 @@ wss.on("connection", (conn, req) => {
   conn.on("message", async (message) => {
     try {
       const messageData = JSON.parse(message.toString());
+
+      // -----------------------------------------------------------------
+      // Typing indicator subscription
+      // Client sends: { type: 'typing', recipient: '<userId>' }
+      // Server forwards to recipient's connections:
+      //   { type: 'typing', sender: '<userId>', username: '<name>' }
+      // -----------------------------------------------------------------
+      if (messageData.type === 'typing') {
+        const { recipient } = messageData;
+        if (recipient && conn.userId) {
+          [...wss.clients]
+            .filter(c => c.userId === recipient)
+            .forEach(c => c.send(JSON.stringify({
+              type: 'typing',
+              sender: conn.userId,
+              username: conn.username,
+            })));
+        }
+        return; // typing events are fire-and-forget, don't persist
+      }
+
+      // -----------------------------------------------------------------
+      // Chat message (existing behaviour)
+      // -----------------------------------------------------------------
       const {recipient, text, file} = messageData;
       let filename = null;
       
