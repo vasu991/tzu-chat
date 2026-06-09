@@ -6,26 +6,26 @@ const dotenv = require('dotenv');
 dotenv.config();
 const jwt = require('jsonwebtoken');
 const cookieParser = require("cookie-parser");
-const bcrypt = require('bcryptjs')
+const bcrypt = require('bcryptjs');
 const User = require('./models/User.js');
 const Message = require("./models/Message.js");
 const ws = require('ws');
 const fs = require("fs");
+
 const jwtSecret = process.env.JWT_SECRET;
 const bcryptSalt = bcrypt.genSaltSync(10);
 
-
-mongoose.connect(process.env.MONGO_URL);
-
-if(mongoose.Error.length > 0) {
-    console.log(mongoose.Error.messages);
+// Ensure uploads directory exists to prevent ENOENT errors on file upload
+const uploadsDir = __dirname + "/uploads";
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
-else {
-    console.log('Connected to Mongoose!!');
-}
+
+mongoose.connect(process.env.MONGO_URL)
+  .then(() => console.log('Connected to Mongoose!!'))
+  .catch((err) => console.error('Error connecting to Mongoose:', err.message));
 
 app.use("/api/uploads", express.static(__dirname + "/uploads"));
-
 app.use(express.json());
 app.use(cookieParser());
 app.use(cors({
@@ -38,16 +38,17 @@ async function getUserDataFromRequest(req) {
     const token = req.cookies?.token;
     if (token) {
         jwt.verify(token, jwtSecret, {}, (err, userData) => {
-            if(err) throw err;
-            resolve(userData);
+            if(err) {
+              reject("Invalid token");
+            } else {
+              resolve(userData);
+            }
         });
     }
     else {
       reject("no token");
     }
   });
-  
-
 }
 
 app.get('/api/test', (req, res) => {
@@ -55,28 +56,39 @@ app.get('/api/test', (req, res) => {
 });
 
 app.get("/api/messages/:userId", async (req, res) => {
-  const {userId} = req.params;
-  const userData = await getUserDataFromRequest(req);
-  const ourUserId = userData.userId;
-  const messages = await Message.find({
-    sender: {$in: [userId, ourUserId]},
-    recipient: {$in: [userId, ourUserId]},
-  })
-  .sort({createdAt: 1});
-  res.json(messages);
+  try {
+    const {userId} = req.params;
+    const userData = await getUserDataFromRequest(req);
+    const ourUserId = userData.userId;
+    const messages = await Message.find({
+      sender: {$in: [userId, ourUserId]},
+      recipient: {$in: [userId, ourUserId]},
+    })
+    .sort({createdAt: 1});
+    res.json(messages);
+  } catch (err) {
+    res.status(401).json({ error: "Unauthorized or token missing" });
+  }
 });
 
 app.get("/api/people", async (req, res) => {
-  const users = await User.find({}, {"_id": 1, username: 1});
-  res.json(users);
+  try {
+    const users = await User.find({}, {"_id": 1, username: 1});
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/api/profile', (req, res) => {
     const token = req.cookies?.token;
     if (token) {
         jwt.verify(token, jwtSecret, {}, (err, userData) => {
-            if(err) throw err;
-            res.json(userData);
+            if(err) {
+              res.status(401).json('invalid token');
+            } else {
+              res.json(userData);
+            }
         });
     }
     else {
@@ -85,26 +97,33 @@ app.get('/api/profile', (req, res) => {
 });
 
 app.post("/api/login", async (req, res) => {
-  const {username, password} = req.body;
-  const foundUser = await User.findOne({username});
-  if(foundUser) {
-    const passOK = bcrypt.compareSync(password, foundUser.password);
-    if(passOK) {
-      jwt.sign({userId:foundUser._id, username}, jwtSecret, {}, (err, token) => {
-        res.cookie('token', token, {sameSite:'none', secure:true}).json({
-          id: foundUser._id,
-        });
-      });
+  try {
+    const {username, password} = req.body;
+    const foundUser = await User.findOne({username});
+    
+    if (!foundUser) {
+      return res.status(401).json({ error: 'User not found' });
     }
+    
+    const passOK = bcrypt.compareSync(password, foundUser.password);
+    if (!passOK) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+    
+    jwt.sign({userId:foundUser._id, username}, jwtSecret, {}, (err, token) => {
+      if (err) throw err;
+      res.cookie('token', token, {sameSite:'none', secure:true}).json({
+        id: foundUser._id,
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
   }
-
 });
 
 app.post('/api/logout', (req,res) => {
   res.cookie('token', '', {sameSite:'none', secure:true}).json('ok');
 });
-
-
 
 app.post('/api/register', async (req,res) => {
     const {username,password} = req.body;
@@ -121,14 +140,16 @@ app.post('/api/register', async (req,res) => {
         });
       });
     } catch(err) {
-      if (err) throw err;
-      res.status(500).json('error');
+      if (err.code === 11000) {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
-
-
-const server = app.listen(process.env.PORT);
+const server = app.listen(process.env.PORT || 4040, () => {
+    console.log(`Server running on port ${process.env.PORT || 4040}`);
+});
 
 const wss = new ws.WebSocketServer({server});
 
@@ -142,6 +163,7 @@ wss.on("connection", (conn, req) => {
      }));
     });
   }
+
   conn.isAlive = true;
 
   conn.timer = setInterval(() => {
@@ -159,78 +181,70 @@ wss.on("connection", (conn, req) => {
     clearTimeout(conn.deathTimer);
   });
 
-
-
-
   const cookies = req.headers.cookie;
   if(cookies) {
-    const tokenCookieString = cookies.split(';').find( (str) => str.startsWith("token=")) || cookies;
+    const tokenCookieString = cookies.split(';').find( (str) => str.trim().startsWith("token=")) || cookies;
     if(tokenCookieString) {
       const token = tokenCookieString.split('=')[1];
       if(token) {
         jwt.verify(token, jwtSecret, {}, (err, userData) => {
-          if(err) throw err;
-          const {userId, username} = userData;
-          conn.userId = userId;
-          conn.username = username;
+          if(err) {
+            console.error("JWT verification error in WS:", err.message);
+          } else {
+            const {userId, username} = userData;
+            conn.userId = userId;
+            conn.username = username;
+            notifyAboutOnlinePeople();
+          }
         });
       }
     }
   }
 
   conn.on("message", async (message) => {
-    const messageData = JSON.parse(message.toString());
-    const {recipient, text, file} = messageData;
-    let filename = null;
-    if(file) {
-      const parts = file.name.split('.');
-      const ext = parts[parts.length - 1];
-      filename = Date.now() + '.' + ext;
-      const path = __dirname + '/uploads/' + filename;
-      const bufferData = Buffer.from(file.data.split(',')[1], 'base64');
-      fs.writeFile(path, bufferData, (err) => {
-        if (err) {
-          console.error("Failed to save file:", err);
-        } else {
-          console.log("file saved: " + path);
-        }
-      });
-    }
-    if(recipient && (text || file)) {
-      const messageDoc = await Message.create({
-        sender: conn.userId,
-        recipient,
-        text,
-        file: file ? filename : null,
-      });
-      [...wss.clients]
-      .filter(c => c.userId === recipient)
-      .forEach(c => c.send(JSON.stringify({
-         text,
-         sender: conn.userId,
-         recipient,
-         file: file ? filename : null,
-         _id: messageDoc._id,
-        })));
-    }
-  });
-  
-notifyAboutOnlinePeople();
-  
-});
+    try {
+      const messageData = JSON.parse(message.toString());
+      const {recipient, text, file} = messageData;
+      let filename = null;
+      
+      if(file) {
+        const parts = file.name.split('.');
+        const ext = parts[parts.length - 1];
+        filename = Date.now() + '.' + ext;
+        const path = __dirname + '/uploads/' + filename;
+        const bufferData = Buffer.from(file.data.split(',')[1], 'base64');
+        fs.writeFile(path, bufferData, (err) => {
+          if (err) {
+            console.error("Failed to save file:", err);
+          } else {
+            console.log("file saved: " + path);
+          }
+        });
+      }
 
-ple();
-  
-});
-
-  recipient,
-         file: file ? filename : null,
-         _id: messageDoc._id,
-        })));
+      if(recipient && (text || file)) {
+        const messageDoc = await Message.create({
+          sender: conn.userId,
+          recipient,
+          text,
+          file: file ? filename : null,
+        });
+        
+        [...wss.clients]
+        .filter(c => c.userId === recipient)
+        .forEach(c => c.send(JSON.stringify({
+           text,
+           sender: conn.userId,
+           recipient,
+           file: file ? filename : null,
+           _id: messageDoc._id,
+           createdAt: messageDoc.createdAt
+          })));
+      }
+    } catch (err) {
+      console.error("Error processing WS message:", err);
     }
   });
   
-notifyAboutOnlinePeople();
-  
+  notifyAboutOnlinePeople();
 });
-
