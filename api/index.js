@@ -331,6 +331,13 @@ app.post('/api/forgot-password', emailRateLimiter, async (req, res) => {
       });
     }
 
+    // Block password resets for accounts registered with disposable emails
+    if (isDisposableEmail(user.email)) {
+      return res.status(400).json({
+        error: 'Password reset is not available for accounts using disposable email addresses. Please contact support.',
+      });
+    }
+
     // Generate a secure random reset token (valid for 1 hour)
     const rawToken   = crypto.randomBytes(32).toString('hex');
     const tokenHash  = crypto.createHash('sha256').update(rawToken).digest('hex');
@@ -391,6 +398,13 @@ app.post('/api/reset-password', async (req, res) => {
     const { userId, token, newPassword } = req.body;
     if (!userId || !token || !newPassword) {
       return res.status(400).json({ error: 'userId, token, and newPassword are required.' });
+    }
+
+    // Enforce minimum password strength on reset
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters long.',
+      });
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
