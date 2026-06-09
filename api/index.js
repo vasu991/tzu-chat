@@ -15,6 +15,54 @@ const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 
 // ---------------------------------------------------------------------------
+// Disposable / temporary email domain blocklist
+// Blocks throwaway email services from being used during sign-up
+// ---------------------------------------------------------------------------
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'mailinator.com', 'guerrillamail.com', 'guerrillamail.net', 'guerrillamail.org',
+  'tempmail.com', 'throwaway.email', 'temp-mail.org', 'fakeinbox.com',
+  'sharklasers.com', 'guerrillamailblock.com', 'grr.la', 'dispostable.com',
+  'yopmail.com', 'yopmail.fr', 'trashmail.com', 'trashmail.me', 'trashmail.net',
+  'maildrop.cc', 'mailnesia.com', 'tempail.com', 'tempr.email',
+  'discard.email', 'discardmail.com', 'discardmail.de',
+  'getnada.com', 'nada.email', 'anonbox.net',
+  'mintemail.com', 'mytemp.email', 'mohmal.com',
+  'burnermail.io', 'inboxkitten.com', 'mailsac.com',
+  'harakirimail.com', 'tmail.ws', 'tempmailo.com',
+  'emailondeck.com', 'crazymailing.com',
+  '10minutemail.com', '10minutemail.net', '10minutemail.org',
+  '20minutemail.com', '20minutemail.it',
+  'mailcatch.com', 'meltmail.com', 'spamgourmet.com',
+  'jetable.org', 'incognitomail.org', 'trashymail.com',
+  'spamfree24.org', 'spambox.us', 'bugmenot.com',
+  'safetymail.info', 'filzmail.com', 'mailexpire.com',
+  'tempinbox.com', 'tempomail.fr', 'tempmailaddress.com',
+  'throwam.com', 'trash-mail.com', 'wegwerfmail.de', 'wegwerfmail.net',
+  'einrot.com', 'e4ward.com', 'disposableemailaddresses.emailmiser.com',
+  'sogetthis.com', 'mailinater.com', 'mailmetrash.com',
+  'thankyou2010.com', 'spam4.me', 'grr.la',
+  'mailnull.com', 'dontreg.com', 'brefmail.com',
+  'clrmail.com', 'koszmail.pl', 'rmqkr.net',
+  'sharklasers.com', 'spam.la', 'mytrashmail.com',
+  'mt2015.com', 'mailforspam.com', 'superstachel.de',
+  'trashdevil.com', 'trashemail.de', 'trashmailer.com',
+  'armyspy.com', 'cuvox.de', 'dayrep.com', 'einrot.de',
+  'fleckens.hu', 'gustr.com', 'jourrapide.com',
+  'rhyta.com', 'superrito.com', 'teleworm.us',
+]);
+
+/**
+ * Check if an email address belongs to a known disposable email provider.
+ * @param {string} email
+ * @returns {boolean}
+ */
+function isDisposableEmail(email) {
+  if (!email || typeof email !== 'string') return false;
+  const domain = email.split('@')[1]?.toLowerCase();
+  return domain ? DISPOSABLE_EMAIL_DOMAINS.has(domain) : false;
+}
+
+// ---------------------------------------------------------------------------
 // Nodemailer transactional email transporter
 // ---------------------------------------------------------------------------
 const emailTransporter = nodemailer.createTransport({
@@ -187,12 +235,21 @@ app.post('/api/logout', (req,res) => {
 });
 
 app.post('/api/register', async (req,res) => {
-    const {username,password} = req.body;
+    const {username, password, email} = req.body;
+
+    // Block disposable / throwaway email domains
+    if (email && isDisposableEmail(email)) {
+      return res.status(400).json({
+        error: 'Disposable email addresses are not allowed. Please use a permanent email.',
+      });
+    }
+
     try {
       const hashedPassword = bcrypt.hashSync(password, bcryptSalt);
       const createdUser = await User.create({
         username:username,
         password:hashedPassword,
+        email: email || undefined,
       });
       jwt.sign({userId:createdUser._id, username}, jwtSecret, {}, (err, token) => {
         if (err) throw err;
