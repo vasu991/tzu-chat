@@ -327,6 +327,102 @@ app.post('/api/register', registerRateLimiter, async (req,res) => {
   });
 
 // ---------------------------------------------------------------------------
+// File upload rate limiter – prevents storage abuse
+// Limit: 10 uploads per IP per hour
+// ---------------------------------------------------------------------------
+const UPLOAD_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const UPLOAD_RATE_MAX       = 10;
+
+const uploadAttempts = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of uploadAttempts) {
+    if (now - record.windowStart > UPLOAD_RATE_WINDOW_MS) {
+      uploadAttempts.delete(ip);
+    }
+  }
+}, UPLOAD_RATE_WINDOW_MS);
+
+function uploadRateLimiter(req, res, next) {
+  const ip  = req.ip || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  let record = uploadAttempts.get(ip);
+
+  if (!record || now - record.windowStart > UPLOAD_RATE_WINDOW_MS) {
+    record = { count: 0, windowStart: now };
+    uploadAttempts.set(ip, record);
+  }
+
+  record.count += 1;
+
+  if (record.count > UPLOAD_RATE_MAX) {
+    const retryAfterSec = Math.ceil(
+      (UPLOAD_RATE_WINDOW_MS - (now - record.windowStart)) / 1000
+    );
+    res.set('Retry-After', String(retryAfterSec));
+    return res.status(429).json({
+      error: 'Too many file uploads. Please try again later.',
+      retryAfter: retryAfterSec,
+    });
+  }
+
+  next();
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/upload
+// REST file upload endpoint (authenticated, rate-limited).
+// Accepts JSON body: { filename: "photo.jpg", data: "base64string..." }
+// Stores files in the /uploads directory with a timestamped name.
+// Max file size: 5 MB (after base64 decoding).
+// ---------------------------------------------------------------------------
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+
+app.post('/api/upload', uploadRateLimiter, async (req, res) => {
+  try {
+    const userData = await getUserDataFromRequest(req);
+
+    const { filename, data } = req.body;
+    if (!filename || !data) {
+      return res.status(400).json({ error: 'filename and data (base64) are required.' });
+    }
+
+    // Decode base64 payload (strip optional data-URI prefix)
+    const base64Content = data.includes(',') ? data.split(',')[1] : data;
+    const buffer = Buffer.from(base64Content, 'base64');
+
+    // Enforce max file size
+    if (buffer.length > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({
+        error: `File too large. Maximum size is ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB.`,
+      });
+    }
+
+    // Build a safe, timestamped filename
+    const ext  = filename.split('.').pop() || 'bin';
+    const safe = `${Date.now()}-${userData.userId}.${ext}`;
+    const dest = `${uploadsDir}/${safe}`;
+
+    fs.writeFileSync(dest, buffer);
+
+    return res.status(201).json({
+      message: 'File uploaded successfully.',
+      file: safe,
+      url: `/api/uploads/${safe}`,
+      size: buffer.length,
+    });
+  } catch (err) {
+    if (err === 'no token' || err === 'Invalid token') {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+    console.error('Upload error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/forgot-password
 // Transactional email: sends a password-reset link to the user's email.
 // Rate-limited to 3 requests per IP per hour → 429 when exceeded.
