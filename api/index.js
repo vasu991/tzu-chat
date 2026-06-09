@@ -11,47 +11,61 @@ const User = require('./models/User.js');
 const Message = require("./models/Message.js");
 const ws = require('ws');
 const fs = require("fs");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 
 // ---------------------------------------------------------------------------
-// Rate limiter – sliding window, in-memory, zero extra dependencies
+// Nodemailer transactional email transporter
 // ---------------------------------------------------------------------------
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const RATE_LIMIT_MAX        = 5;              // max attempts per window
+const emailTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: Number(process.env.SMTP_PORT) === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
-// Map<ip, { count: number, windowStart: number }>
-const loginAttempts = new Map();
+// ---------------------------------------------------------------------------
+// Email rate limiter – sliding window, in-memory, zero extra dependencies
+// Prevents abuse of the transactional email endpoint (forgot-password)
+// Limit: 3 emails per IP per hour
+// ---------------------------------------------------------------------------
+const EMAIL_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const EMAIL_RATE_MAX       = 3;
 
-// Purge entries older than one window to keep memory bounded
+const emailAttempts = new Map();
+
 setInterval(() => {
   const now = Date.now();
-  for (const [ip, record] of loginAttempts) {
-    if (now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
-      loginAttempts.delete(ip);
+  for (const [ip, record] of emailAttempts) {
+    if (now - record.windowStart > EMAIL_RATE_WINDOW_MS) {
+      emailAttempts.delete(ip);
     }
   }
-}, RATE_LIMIT_WINDOW_MS);
+}, EMAIL_RATE_WINDOW_MS);
 
-function loginRateLimiter(req, res, next) {
+function emailRateLimiter(req, res, next) {
   const ip  = req.ip || req.socket?.remoteAddress || 'unknown';
   const now = Date.now();
 
-  let record = loginAttempts.get(ip);
+  let record = emailAttempts.get(ip);
 
-  // Start a fresh window if none exists or the previous window has expired
-  if (!record || now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
+  if (!record || now - record.windowStart > EMAIL_RATE_WINDOW_MS) {
     record = { count: 0, windowStart: now };
-    loginAttempts.set(ip, record);
+    emailAttempts.set(ip, record);
   }
 
   record.count += 1;
 
-  if (record.count > RATE_LIMIT_MAX) {
+  if (record.count > EMAIL_RATE_MAX) {
     const retryAfterSec = Math.ceil(
-      (RATE_LIMIT_WINDOW_MS - (now - record.windowStart)) / 1000
+      (EMAIL_RATE_WINDOW_MS - (now - record.windowStart)) / 1000
     );
     res.set('Retry-After', String(retryAfterSec));
     return res.status(429).json({
-      error: 'Too many login attempts. Please try again later.',
+      error: 'Too many password reset requests. Please try again later.',
       retryAfter: retryAfterSec,
     });
   }
@@ -143,7 +157,7 @@ app.get('/api/profile', (req, res) => {
     }
 });
 
-app.post("/api/login", loginRateLimiter, async (req, res) => {
+app.post("/api/login", async (req, res) => {
   try {
     const {username, password} = req.body;
     const foundUser = await User.findOne({username});
@@ -193,6 +207,112 @@ app.post('/api/register', async (req,res) => {
       res.status(500).json({ error: 'Internal server error' });
     }
   });
+
+// ---------------------------------------------------------------------------
+// POST /api/forgot-password
+// Transactional email: sends a password-reset link to the user's email.
+// Rate-limited to 3 requests per IP per hour → 429 when exceeded.
+// ---------------------------------------------------------------------------
+app.post('/api/forgot-password', emailRateLimiter, async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required.' });
+    }
+
+    const user = await User.findOne({ username });
+
+    // Always respond with 200 to avoid username enumeration
+    if (!user || !user.email) {
+      return res.status(200).json({
+        message: 'If that username has an email on file, a reset link has been sent.',
+      });
+    }
+
+    // Generate a secure random reset token (valid for 1 hour)
+    const rawToken   = crypto.randomBytes(32).toString('hex');
+    const tokenHash  = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt  = new Date(Date.now() + 60 * 60 * 1000);
+
+    user.passwordResetToken   = tokenHash;
+    user.passwordResetExpires = expiresAt;
+    await user.save();
+
+    const clientUrl  = process.env.LOCAL_CLIENT_URL || 'http://localhost:5173';
+    const resetLink  = `${clientUrl}/reset-password?token=${rawToken}&user=${user._id}`;
+
+    // Send the transactional email
+    await emailTransporter.sendMail({
+      from:    process.env.EMAIL_FROM || '"Tzu Chat" <no-reply@tzuchat.app>',
+      to:      user.email,
+      subject: 'Reset your Tzu Chat password',
+      text: [
+        `Hi ${user.username},`,
+        '',
+        'You requested a password reset for your Tzu Chat account.',
+        'Click the link below to set a new password (valid for 1 hour):',
+        '',
+        resetLink,
+        '',
+        'If you did not request this, you can safely ignore this email.',
+      ].join('\n'),
+      html: `
+        <p>Hi <strong>${user.username}</strong>,</p>
+        <p>You requested a password reset for your Tzu Chat account.</p>
+        <p>
+          <a href="${resetLink}" style="
+            display:inline-block;padding:10px 20px;
+            background:#4f46e5;color:#fff;border-radius:6px;
+            text-decoration:none;font-family:sans-serif;
+          ">Reset my password</a>
+        </p>
+        <p>This link expires in <strong>1 hour</strong>.</p>
+        <p style="color:#888;font-size:12px;">If you did not request this, you can safely ignore this email.</p>
+      `,
+    });
+
+    return res.status(200).json({
+      message: 'If that username has an email on file, a reset link has been sent.',
+    });
+  } catch (err) {
+    console.error('Forgot-password error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/reset-password
+// Consumes the reset token and sets the new password.
+// ---------------------------------------------------------------------------
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { userId, token, newPassword } = req.body;
+    if (!userId || !token || !newPassword) {
+      return res.status(400).json({ error: 'userId, token, and newPassword are required.' });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await User.findOne({
+      _id: userId,
+      passwordResetToken:   tokenHash,
+      passwordResetExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid or expired reset token.' });
+    }
+
+    user.password             = bcrypt.hashSync(newPassword, bcryptSalt);
+    user.passwordResetToken   = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+
+    return res.status(200).json({ message: 'Password updated successfully.' });
+  } catch (err) {
+    console.error('Reset-password error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
 
 const server = app.listen(process.env.PORT || 4040, () => {
     console.log(`Server running on port ${process.env.PORT || 4040}`);
