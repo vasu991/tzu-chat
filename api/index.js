@@ -344,10 +344,38 @@ app.get("/api/messages/:userId", messagesRateLimiter, async (req, res) => {
 
 app.get("/api/people", async (req, res) => {
   try {
-    const users = await User.find({}, {"_id": 1, username: 1});
+    const users = await User.find({}, {"_id": 1, username: 1, statusMessage: 1});
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/status
+// Authenticated endpoint to update the user's status message.
+// New field added via schema migration (statusMessage: String, max 100 chars).
+// ---------------------------------------------------------------------------
+app.put('/api/status', async (req, res) => {
+  try {
+    const userData = await getUserDataFromRequest(req);
+    const { statusMessage } = req.body;
+
+    if (typeof statusMessage !== 'string') {
+      return res.status(400).json({ error: 'statusMessage must be a string.' });
+    }
+    if (statusMessage.length > 100) {
+      return res.status(400).json({ error: 'statusMessage must be 100 characters or fewer.' });
+    }
+
+    await User.findByIdAndUpdate(userData.userId, { statusMessage: statusMessage.trim() });
+    res.json({ message: 'Status updated.', statusMessage: statusMessage.trim() });
+  } catch (err) {
+    if (err === 'no token' || err === 'Invalid token') {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+    console.error('Status update error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 

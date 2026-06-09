@@ -188,6 +188,7 @@ export default function Chat() {
                             id={userId}
                             online={false}
                             username={offlinePeople[userId].username}
+                            statusMessage={offlinePeople[userId].statusMessage}
                             onClick={() => setSelectedUserId(userId)}
                             selected={userId === selectedUserId} />
                     ))}
