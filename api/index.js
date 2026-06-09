@@ -4,6 +4,20 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 dotenv.config();
+
+// ---------------------------------------------------------------------------
+// Environment & Secrets Validation
+// Fail-fast if critical environment variables are missing
+// ---------------------------------------------------------------------------
+const REQUIRED_ENV_VARS = ['MONGO_URL', 'JWT_SECRET', 'LOCAL_CLIENT_URL'];
+
+for (const envVar of REQUIRED_ENV_VARS) {
+  if (!process.env[envVar]) {
+    console.error(`[FATAL] Missing required environment variable: ${envVar}`);
+    console.error('Please check your .env file or deployment secrets.');
+    process.exit(1);
+  }
+}
 const jwt = require('jsonwebtoken');
 const cookieParser = require("cookie-parser");
 const bcrypt = require('bcryptjs');
