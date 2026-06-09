@@ -17,32 +17,52 @@ export default function Chat() {
 
 
     useEffect(() => {
-        connectToWs();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, []);
+        let wsInstance = null;
+        let reconnectTimeout = null;
+        let isUnmounted = false;
 
-      function connectToWs() {
-        const ws = new WebSocket(import.meta.env.VITE_REACT_WSS_URL_PROD);
-        ws.onopen = () => {
-          console.log('WebSocket connection opened');
+        function connectToWs() {
+            if (isUnmounted) return;
+            const newWs = new WebSocket(import.meta.env.VITE_REACT_WSS_URL_PROD);
+            
+            newWs.onopen = () => {
+              if (isUnmounted) {
+                  newWs.close();
+                  return;
+              }
+              console.log('WebSocket connection opened');
+              setWs(newWs);
+              wsInstance = newWs;
+            };
+            
+            newWs.onerror = (error) => {
+              console.error('WebSocket error:', error);
+            };
+            
+            newWs.onclose = (event) => {
+              console.log('WebSocket connection closed:', event);
+              setWs(null);
+              if (!isUnmounted) {
+                console.log('Disconnected. Trying to reconnect.');
+                reconnectTimeout = setTimeout(connectToWs, 1000);
+              }
+            };
+
+            newWs.addEventListener('message', handleMessage);
+        }
+
+        connectToWs();
+
+        return () => {
+            isUnmounted = true;
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (wsInstance) {
+                wsInstance.removeEventListener('message', handleMessage);
+                wsInstance.close();
+            }
         };
-        
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-        };
-        
-        ws.onclose = (event) => {
-          console.log('WebSocket connection closed:', event);
-        };
-        setWs(ws);
-        ws.addEventListener('message', handleMessage);
-        ws.addEventListener('close', () => {
-          setTimeout(() => {
-            console.log('Disconnected. Trying to reconnect.');
-            connectToWs();
-          }, 1000);
-        });
-      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [selectedUserId]); // Depends on selectedUserId to correctly handle message updates in closure
 
     function showOnlinePeople(peopleArray) {
         const people = {};
@@ -82,18 +102,19 @@ export default function Chat() {
             text: newMessageText,
             file,
         }));
-        setNewMessageText("");
-        setMessages(prev => ([...prev, {
-            text: newMessageText,
-            sender: id,
-            recipient: selectedUserId,
-            _id: Date.now(),
-        }]));
-
-        if(file) {
+        
+        if (file) {
           axios.get('/api/messages/'+selectedUserId).then(res => {
             setMessages(res.data);
           });
+        } else {
+          setNewMessageText("");
+          setMessages(prev => ([...prev, {
+              text: newMessageText,
+              sender: id,
+              recipient: selectedUserId,
+              _id: Date.now(),
+          }]));
         }
     }
 
@@ -202,8 +223,9 @@ export default function Chat() {
                                       <div className="">
                                         <a
                                         target="_blank"
+                                        rel="noreferrer"
                                         className="flex items-center gap-1 border-b"
-                                        href={axios.defaults.baseURL + '/uploads/' + message.file}>
+                                        href={`${axios.defaults.baseURL}/api/uploads/${message.file}`}>
                                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-4">
                       <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
                       </svg>
@@ -250,5 +272,7 @@ export default function Chat() {
             </div>
 
         </div>
+    );
+}     </div>
     );
 }

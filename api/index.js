@@ -187,9 +187,13 @@ wss.on("connection", (conn, req) => {
       const ext = parts[parts.length - 1];
       filename = Date.now() + '.' + ext;
       const path = __dirname + '/uploads/' + filename;
-      const bufferData = new Buffer.from(file.data.split(',')[1], 'base64');
-      fs.writeFile(path, bufferData, () => {
-        console.log("file saved: "+path);
+      const bufferData = Buffer.from(file.data.split(',')[1], 'base64');
+      fs.writeFile(path, bufferData, (err) => {
+        if (err) {
+          console.error("Failed to save file:", err);
+        } else {
+          console.log("file saved: " + path);
+        }
       });
     }
     if(recipient && (text || file)) {
@@ -205,6 +209,21 @@ wss.on("connection", (conn, req) => {
          text,
          sender: conn.userId,
          recipient,
+         file: file ? filename : null,
+         _id: messageDoc._id,
+        })));
+    }
+  });
+  
+notifyAboutOnlinePeople();
+  
+});
+
+ple();
+  
+});
+
+  recipient,
          file: file ? filename : null,
          _id: messageDoc._id,
         })));
