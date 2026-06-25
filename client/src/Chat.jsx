@@ -16,6 +16,31 @@ export default function Chat() {
     const [messages, setMessages] = useState([]);
     const divUnderMessages = useRef();
     const selectedUserIdRef = useRef(null);
+    const [sidebarWidth, setSidebarWidth] = useState(300);
+    const isDragging = useRef(false);
+
+    const handleMouseDown = (e) => {
+        e.preventDefault();
+        isDragging.current = true;
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = 'col-resize';
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isDragging.current) return;
+        let newWidth = e.clientX;
+        if (newWidth < 200) newWidth = 200;
+        if (newWidth > window.innerWidth - 300) newWidth = window.innerWidth - 300;
+        setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+        isDragging.current = false;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = 'default';
+    };
 
     useEffect(() => {
         selectedUserIdRef.current = selectedUserId;
@@ -166,8 +191,8 @@ export default function Chat() {
     const messagesWithoutDupes = uniqBy(messages, "_id");
 
     return(
-        <div className="flex h-screen dark:bg-gray-900 transition-colors">
-            <div className="bg-white dark:bg-gray-800 w-1/3 flex flex-col border-r dark:border-gray-700">
+        <div className="flex h-screen dark:bg-gray-900 transition-colors overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 flex flex-col border-r dark:border-gray-700 flex-shrink-0" style={{ width: sidebarWidth }}>
                 <div className="flex-grow">
                     <div className="flex items-center justify-between pr-2">
                         <Logo />
@@ -205,7 +230,14 @@ export default function Chat() {
                         className="text-sm text-gray-500 dark:text-gray-300 bg-blue-200 dark:bg-gray-700 py-1 px-2 border dark:border-gray-600 rounded-sm">Logout</button>
                 </div>
             </div>
-            <div className="flex flex-col bg-blue-50 dark:bg-gray-900 w-2/3 p-2">
+            
+            {/* Resizer Handle */}
+            <div 
+                className="w-1 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors bg-transparent z-10 flex-shrink-0"
+                onMouseDown={handleMouseDown}
+            ></div>
+
+            <div className="flex flex-col bg-blue-50 dark:bg-gray-900 flex-grow p-2" style={{ width: `calc(100% - ${sidebarWidth}px - 4px)` }}>
                 <div className="flex-grow">
                     {!selectedUserId && (
                         <div className="flex h-full flex-grow items-center justify-center">
@@ -214,7 +246,7 @@ export default function Chat() {
                     )}
                     {!!selectedUserId && (
                         <div className="relative h-full">
-                            <div className="overflow-y-scroll absolute top-0 left-0 right-0 bottom-2">
+                            <div className="overflow-y-scroll no-scrollbar absolute top-0 left-0 right-0 bottom-2">
                                 {messagesWithoutDupes.map(message => (
                                     <div key={message._id} className={(message.sender === id ? "text-right" : "text-left")}>
                                         <div className={"text-left inline-block p-2 my-2 rounded-md text-sm " + (message.sender === id ? "bg-blue-500 text-white" : "bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-200")}>

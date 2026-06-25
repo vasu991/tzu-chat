@@ -5,6 +5,7 @@ import ThemeToggle from "./ThemeToggle.jsx";
 
 export function RegisterAndLoginForm() {
     const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoginOrRegister, setIsLoginOrRegister] = useState('login');
     const [error, setError] = useState('');
@@ -15,7 +16,8 @@ export function RegisterAndLoginForm() {
         setError('');
         try {
             const url = isLoginOrRegister === 'register' ? '/api/register' : '/api/login';
-            const {data} = await axios.post(url, {username, password});
+            const payload = isLoginOrRegister === 'register' ? {username, email, password} : {username, password};
+            const {data} = await axios.post(url, payload);
             setLoggedInUsername(username);
             setId(data.id);
         } catch (err) {
@@ -36,6 +38,11 @@ export function RegisterAndLoginForm() {
                 <input value={username}
                 onChange={ev => setUsername(ev.target.value)}
                 type="text" placeholder="username" className="block w-full rounded-sm p-2 mb-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"/>
+                {isLoginOrRegister === 'register' && (
+                    <input value={email}
+                    onChange={ev => setEmail(ev.target.value)}
+                    type="email" placeholder="email" className="block w-full rounded-sm p-2 mb-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"/>
+                )}
                 <input
                 value={password}
                 onChange={ev => setPassword(ev.target.value)}
