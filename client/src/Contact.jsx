@@ -1,3 +1,4 @@
+import PropTypes from 'prop-types';
 import Avatar from "./Avatar.jsx";
 
 export default function Contact({id,username,onClick,selected,online,statusMessage}) {
@@ -21,3 +22,12 @@ export default function Contact({id,username,onClick,selected,online,statusMessa
     </div>
   );
 }
+
+Contact.propTypes = {
+  id: PropTypes.string.isRequired,
+  username: PropTypes.string.isRequired,
+  onClick: PropTypes.func.isRequired,
+  selected: PropTypes.bool.isRequired,
+  online: PropTypes.bool.isRequired,
+  statusMessage: PropTypes.string,
+};

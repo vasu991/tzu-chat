@@ -19,12 +19,16 @@ export default function Chat() {
     const [sidebarWidth, setSidebarWidth] = useState(300);
     const isDragging = useRef(false);
 
-    const handleMouseDown = (e) => {
-        e.preventDefault();
+    const handleMouseDown = () => {
         isDragging.current = true;
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = 'col-resize';
+        document.addEventListener("mousemove", handleMouseMove);
+        document.addEventListener("mouseup", handleMouseUp);
+    };
+
+    const handleMouseUp = () => {
+        isDragging.current = false;
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
     };
 
     const handleMouseMove = (e) => {
@@ -35,12 +39,12 @@ export default function Chat() {
         setSidebarWidth(newWidth);
     };
 
-    const handleMouseUp = () => {
-        isDragging.current = false;
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = 'default';
-    };
+    useEffect(() => {
+        return () => {
+            document.removeEventListener("mousemove", handleMouseMove);
+            document.removeEventListener("mouseup", handleMouseUp);
+        };
+    }, []);
 
     useEffect(() => {
         selectedUserIdRef.current = selectedUserId;
@@ -192,7 +196,7 @@ export default function Chat() {
 
     return(
         <div className="flex h-screen dark:bg-gray-900 transition-colors overflow-hidden">
-            <div className="bg-white dark:bg-gray-800 flex flex-col border-r dark:border-gray-700 flex-shrink-0" style={{ width: sidebarWidth }}>
+            <div className="bg-white dark:bg-gray-800 flex flex-col border-r dark:border-gray-700 flex-shrink-0" style={{ width: `${sidebarWidth}px` }}>
                 <div className="flex-grow">
                     <div className="flex items-center justify-between pr-2">
                         <Logo />
@@ -225,20 +229,18 @@ export default function Chat() {
                         </svg>
                         {username}
                     </span>
-                    <button
-                        onClick={logout}
-                        className="text-sm text-gray-500 dark:text-gray-300 bg-blue-200 dark:bg-gray-700 py-1 px-2 border dark:border-gray-600 rounded-sm">Logout</button>
+                    <button onClick={logout} className="text-sm bg-blue-100 dark:bg-gray-700 dark:text-gray-200 py-1 px-2 text-gray-500 border rounded-sm">Logout</button>
                 </div>
             </div>
             
             {/* Resizer Handle */}
             <div 
-                className="w-1 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors bg-transparent z-10 flex-shrink-0"
+                className="w-1 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors bg-gray-200 dark:bg-gray-600 z-10 flex-shrink-0"
                 onMouseDown={handleMouseDown}
             ></div>
 
             <div className="flex flex-col bg-blue-50 dark:bg-gray-900 flex-grow p-2" style={{ width: `calc(100% - ${sidebarWidth}px - 4px)` }}>
-                <div className="flex-grow">
+                <div className="flex-grow overflow-hidden relative">
                     {!selectedUserId && (
                         <div className="flex h-full flex-grow items-center justify-center">
                             <div className="text-gray-400 dark:text-gray-500">&larr; Select a person from the sidebar</div>
@@ -270,7 +272,7 @@ export default function Chat() {
                     )}
                 </div>
                 {!!selectedUserId && (
-                    <form id="chat-input" className="flex gap-2" onSubmit={sendMessage}>
+                    <form id="chat-input" className="flex gap-2 relative z-20 mt-2" onSubmit={sendMessage}>
                         <label className="bg-gray-200 dark:bg-gray-700 p-2 border dark:border-gray-600 rounded-sm cursor-pointer text-gray-600 dark:text-gray-300 border-blue-200 dark:border-gray-600">
                             <input type="file" className="hidden" onChange={sendFile} />
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
